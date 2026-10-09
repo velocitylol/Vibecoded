@@ -1,0 +1,369 @@
+print("dumper")
+
+local Players = game:GetService("Players")
+local plr = Players.LocalPlayer
+while not plr do task.wait() plr = Players.LocalPlayer end
+local pg = plr:WaitForChild("PlayerGui")
+
+local old = pg:FindFirstChild("DumpUI")
+if old then old:Destroy() end
+
+-- ============ CONFIG ============
+local KEYWORDS = {
+    -- people / roles
+    "admin", "owner", "staff", "moderator", "mod", "dev", "developer",
+    "creator", "founder", "supervisor", "manager", "support", "staffmember",
+    -- actions
+    "command", "cmd", "execute", "exec", "run", "dispatch", "invoke",
+    -- mod actions
+    "ban", "kick", "mute", "warn", "punish", "jail", "freeze",
+    -- give actions
+    "grant", "give", "addcash", "addcoins", "addmoney", "addgems",
+    "giveitem", "givecash", "givecoins", "givemoney", "spawn",
+    -- broadcast
+    "broadcast", "announce", "global", "messageall", "notifyall",
+    -- dev / debug
+    "debug", "cheat", "test", "bypass", "backdoor",
+}
+
+local SERVICES = {
+    "ReplicatedStorage", "ReplicatedFirst", "StarterGui", "StarterPack",
+    "StarterPlayer", "Workspace", "ServerScriptService", "ServerStorage",
+    "Players", "CoreGui", "Chat", "ChatService", "Teams", "Lighting",
+    "SoundService", "TextChatService",
+}
+
+-- ============ FOLDER NAME ============
+local function nextFolderName()
+    local n = 1
+    if type(listfiles) == "function" then
+        local ok, files = pcall(listfiles)
+        if ok and files then
+            for _, f in ipairs(files) do
+                local num = f:match("^Ugc_(%d+)$")
+                if num then
+                    local v = tonumber(num)
+                    if v and v >= n then n = v + 1 end
+                end
+            end
+        end
+    end
+    return "Ugc_" .. string.format("%03d", n)
+end
+
+-- ============ UI ============
+local gui = Instance.new("ScreenGui")
+gui.Name = "DumpUI"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.Parent = pg
+
+local fr = Instance.new("Frame")
+fr.Size = UDim2.new(0, 300, 0, 190)
+fr.Position = UDim2.new(0.5, -150, 0.5, -95)
+fr.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+fr.BorderSizePixel = 0
+fr.Parent = gui
+Instance.new("UICorner", fr).CornerRadius = UDim.new(0, 8)
+local stroke = Instance.new("UIStroke", fr)
+stroke.Color = Color3.fromRGB(255, 255, 255)
+stroke.Thickness = 1.5
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -16, 0, 20)
+title.Position = UDim2.new(0, 8, 0, 6)
+title.BackgroundTransparency = 1
+title.Text = "dumper"
+title.TextColor3 = Color3.fromRGB(220, 220, 240)
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Font = Enum.Font.GothamBold
+title.TextSize = 12
+title.Parent = fr
+
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, -16, 0, 16)
+status.Position = UDim2.new(0, 8, 0, 26)
+status.BackgroundTransparency = 1
+status.Text = "idle"
+status.TextColor3 = Color3.fromRGB(150, 150, 170)
+status.TextXAlignment = Enum.TextXAlignment.Left
+status.Font = Enum.Font.Code
+status.TextSize = 10
+status.Parent = fr
+
+-- progress bar
+local barBg = Instance.new("Frame")
+barBg.Size = UDim2.new(1, -16, 0, 10)
+barBg.Position = UDim2.new(0, 8, 0, 48)
+barBg.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+barBg.BorderSizePixel = 0
+barBg.Parent = fr
+Instance.new("UICorner", barBg).CornerRadius = UDim.new(0, 5)
+
+local barFill = Instance.new("Frame")
+barFill.Size = UDim2.new(0, 0, 1, 0)
+barFill.BackgroundColor3 = Color3.fromRGB(90, 190, 255)
+barFill.BorderSizePixel = 0
+barFill.Parent = barBg
+Instance.new("UICorner", barFill).CornerRadius = UDim.new(0, 5)
+
+local pct = Instance.new("TextLabel")
+pct.Size = UDim2.new(1, -16, 0, 14)
+pct.Position = UDim2.new(0, 8, 0, 62)
+pct.BackgroundTransparency = 1
+pct.Text = "0%"
+pct.TextColor3 = Color3.fromRGB(180, 200, 255)
+pct.TextXAlignment = Enum.TextXAlignment.Right
+pct.Font = Enum.Font.Code
+pct.TextSize = 10
+pct.Parent = fr
+
+-- stat rows
+local function statRow(label, y)
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(0.5, -8, 0, 16)
+    l.Position = UDim2.new(0, 8, 0, y)
+    l.BackgroundTransparency = 1
+    l.Text = label
+    l.TextColor3 = Color3.fromRGB(150, 150, 170)
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.Font = Enum.Font.Code
+    l.TextSize = 10
+    l.Parent = fr
+    local v = Instance.new("TextLabel")
+    v.Size = UDim2.new(0.5, -8, 0, 16)
+    v.Position = UDim2.new(0.5, 0, 0, y)
+    v.BackgroundTransparency = 1
+    v.Text = "0"
+    v.TextColor3 = Color3.fromRGB(220, 220, 240)
+    v.TextXAlignment = Enum.TextXAlignment.Right
+    v.Font = Enum.Font.Code
+    v.TextSize = 10
+    v.Parent = fr
+    return v
+end
+
+local filesVal   = statRow("files",   84)
+local adminVal   = statRow("admin",   100)
+local remoteVal  = statRow("remotes", 116)
+
+local current = Instance.new("TextLabel")
+current.Size = UDim2.new(1, -16, 0, 14)
+current.Position = UDim2.new(0, 8, 0, 134)
+current.BackgroundTransparency = 1
+current.Text = ""
+current.TextColor3 = Color3.fromRGB(150, 150, 170)
+current.TextXAlignment = Enum.TextXAlignment.Left
+current.Font = Enum.Font.Code
+current.TextSize = 9
+current.TextTruncate = Enum.TextTruncate.AtEnd
+current.Parent = fr
+
+local btnRow = Instance.new("Frame")
+btnRow.Size = UDim2.new(1, -16, 0, 22)
+btnRow.Position = UDim2.new(0, 8, 1, -30)
+btnRow.BackgroundTransparency = 1
+btnRow.Parent = fr
+local bl = Instance.new("UIListLayout", btnRow)
+bl.FillDirection = Enum.FillDirection.Horizontal
+bl.Padding = UDim.new(0, 6)
+bl.SortOrder = Enum.SortOrder.LayoutOrder
+
+local function mkBtn(t, c)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0.5, -3, 1, 0)
+    b.BackgroundColor3 = c
+    b.BorderSizePixel = 0
+    b.Text = t
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 11
+    b.Parent = btnRow
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
+    return b
+end
+
+local startB = mkBtn("start", Color3.fromRGB(60, 140, 60))
+local closeB = mkBtn("close", Color3.fromRGB(80, 60, 80))
+
+-- drag
+do
+    local d, ds, sp
+    fr.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1
+            or i.UserInputType == Enum.UserInputType.Touch then
+            d = true
+            ds = i.Position
+            sp = fr.Position
+        end
+    end)
+    fr.InputChanged:Connect(function(i)
+        if d and (i.UserInputType == Enum.UserInputType.MouseMovement
+            or i.UserInputType == Enum.UserInputType.Touch) then
+            local v = i.Position - ds
+            fr.Position = UDim2.new(sp.X.Scale, sp.X.Offset + v.X, sp.Y.Scale, sp.Y.Offset + v.Y)
+        end
+    end)
+    fr.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1
+            or i.UserInputType == Enum.UserInputType.Touch then d = false end
+    end)
+end
+
+closeB.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+-- ============ DUMPER ============
+local running = false
+local function hasFn(n) return type(rawget(getfenv(), n)) == "function" end
+
+local function collectAll()
+    local remoteLines = {}
+    local adminLines = {}
+    local total = 0
+    local adminHits = 0
+    local remoteCount = 0
+
+    -- gather services we can reach
+    local svcs = {}
+    for _, name in ipairs(SERVICES) do
+        local ok, s = pcall(game.GetService, game, name)
+        if ok and s then svcs[#svcs+1] = s end
+    end
+
+    -- count total descendants first for the progress bar
+    local totalCount = 0
+    for _, s in ipairs(svcs) do
+        local ok, desc = pcall(function() return s:GetDescendants() end)
+        if ok and desc then totalCount = totalCount + #desc end
+    end
+    totalCount = math.max(totalCount, 1)
+
+    local processed = 0
+    local function tick()
+        processed = processed + 1
+        if processed % 100 == 0 then
+            local p = math.min(1, processed / totalCount)
+            barFill.Size = UDim2.new(p, 0, 1, 0)
+            pct.Text = math.floor(p * 100) .. "%"
+            status.Text = "scanning"
+            task.wait()
+        end
+    end
+
+    for _, s in ipairs(svcs) do
+        local ok, desc = pcall(function() return s:GetDescendants() end)
+        if not ok or not desc then goto continue end
+        for _, d in ipairs(desc) do
+            tick()
+            total = total + 1
+
+            -- log remotes
+            if d:IsA("RemoteEvent") or d:IsA("RemoteFunction")
+                or d:IsA("UnreliableRemoteEvent") then
+                remoteCount = remoteCount + 1
+                remoteLines[#remoteLines+1] = d:GetFullName() .. "  [" .. d.ClassName .. "]"
+            end
+
+            -- keyword check
+            local name = d.Name:lower()
+            local parentChain = d:GetFullName():lower()
+            local hit = nil
+            for _, k in ipairs(KEYWORDS) do
+                if name:find(k, 1, true) then
+                    hit = k
+                    break
+                end
+            end
+            if hit then
+                adminHits = adminHits + 1
+                local kind = d.ClassName
+                local extra = ""
+                if d:IsA("RemoteEvent") or d:IsA("RemoteFunction")
+                    or d:IsA("UnreliableRemoteEvent") then
+                    extra = "  REMOTE"
+                end
+                adminLines[#adminLines+1] = "[" .. hit .. "] " .. d:GetFullName()
+                    .. "  (" .. kind .. ")" .. extra
+            end
+
+            if processed % 250 == 0 then
+                filesVal.Text = tostring(total)
+                adminVal.Text = tostring(adminHits)
+                remoteVal.Text = tostring(remoteCount)
+                current.Text = d:GetFullName():sub(1, 60)
+            end
+        end
+        ::continue::
+    end
+
+    return remoteLines, adminLines, total, adminHits, remoteCount
+end
+
+local function writeOut(folder, remoteLines, adminLines, total, adminHits, remoteCount)
+    if not hasFn("makefolder") or not hasFn("writefile") then
+        status.Text = "no file access"
+        return false
+    end
+    pcall(makefolder, folder)
+
+    local rm = table.concat(remoteLines, "\n")
+    local am = table.concat(adminLines, "\n")
+
+    local summary = table.concat({
+        "Game: " .. tostring(game.Name),
+        "PlaceId: " .. tostring(game.PlaceId),
+        "JobId: " .. tostring(game.JobId),
+        "Folder: " .. folder,
+        "Scanned: " .. tostring(total),
+        "Remotes: " .. tostring(remoteCount),
+        "Admin: " .. tostring(adminHits),
+        "Time: " .. os.date("%Y-%m-%d %H:%M:%S"),
+    }, "\n")
+
+    pcall(writefile, folder .. "/remotes_manifest.txt", rm)
+    pcall(writefile, folder .. "/admin_findings.txt", am)
+    pcall(writefile, folder .. "/_summary.txt", summary)
+    return true
+end
+
+startB.MouseButton1Click:Connect(function()
+    if running then return end
+    running = true
+    startB.Text = "..."
+    startB.BackgroundColor3 = Color3.fromRGB(120, 100, 30)
+
+    barFill.Size = UDim2.new(0, 0, 1, 0)
+    pct.Text = "0%"
+    status.Text = "scanning"
+
+    local folder = nextFolderName()
+    task.spawn(function()
+        local ok, err = pcall(function()
+            local remoteLines, adminLines, total, adminHits, remoteCount = collectAll()
+            status.Text = "writing"
+            barFill.Size = UDim2.new(1, 0, 1, 0)
+            pct.Text = "100%"
+            filesVal.Text = tostring(total)
+            adminVal.Text = tostring(adminHits)
+            remoteVal.Text = tostring(remoteCount)
+
+            local wrote = writeOut(folder, remoteLines, adminLines, total, adminHits, remoteCount)
+            if wrote then
+                status.Text = "done -> " .. folder
+                status.TextColor3 = Color3.fromRGB(140, 255, 140)
+            else
+                status.Text = "scan done, no writefile"
+                status.TextColor3 = Color3.fromRGB(255, 200, 120)
+            end
+        end)
+        if not ok then
+            status.Text = "err: " .. tostring(err):sub(1, 40)
+            status.TextColor3 = Color3.fromRGB(255, 120, 120)
+        end
+        running = false
+        startB.Text = "start"
+        startB.BackgroundColor3 = Color3.fromRGB(60, 140, 60)
+    end)
+end)
+
+print("ready")
