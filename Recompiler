@@ -1,73 +1,305 @@
-local kws = {"admin","owner","staff","moderator","mod ","dev","developer","command","cmd","execute","ban","kick","mute","give","grant","spawn","broadcast","announce","debug","bypass","backdoor","cheat","test"}
+local Players = game:GetService("Players")
+local plr = Players.LocalPlayer
+while not plr do task.wait() plr = Players.LocalPlayer end
+local pg = plr:WaitForChild("PlayerGui")
 
-local function collect()
-    local rem, adm, tot, hits, rc = {}, {}, 0, 0, 0
-    local svcs = {}
-    for _, n in ipairs({"ReplicatedStorage","ReplicatedFirst","StarterGui","StarterPack","StarterPlayer","Workspace","ServerScriptService","ServerStorage","Players","CoreGui","Chat","ChatService","Teams"}) do
-        local ok, s = pcall(game.GetService, game, n)
-        if ok and s then svcs[#svcs+1] = s end
-    end
-    for _, s in ipairs(svcs) do
-        local ok, d = pcall(function() return s:GetDescendants() end)
-        if ok and d then
-            for _, x in ipairs(d) do
-                tot = tot + 1
-                if x:IsA("RemoteEvent") or x:IsA("RemoteFunction") or x:IsA("UnreliableRemoteEvent") then
-                    rc = rc + 1
-                    rem[#rem+1] = x:GetFullName() .. "  [" .. x.ClassName .. "]"
-                end
-                local nm = x.Name:lower()
-                for _, k in ipairs(kws) do
-                    if nm:find(k, 1, true) then
-                        hits = hits + 1
-                        adm[#adm+1] = "[" .. k .. "] " .. x:GetFullName() .. "  (" .. x.ClassName .. ")"
-                        break
-                    end
-                end
-            end
-        end
-    end
-    return rem, adm, tot, hits, rc
+local old = pg:FindFirstChild("DumpUI")
+if old then old:Destroy() end
+
+local kws = {
+    "admin","owner","staff","moderator","mod ","dev","developer","creator",
+    "founder","manager","support","command","cmd","execute","exec",
+    "ban","kick","mute","warn","punish","jail","freeze",
+    "grant","give","addcash","addcoins","addmoney","addgems","spawn",
+    "broadcast","announce","global","debug","cheat","bypass","backdoor",
+}
+
+local svcNames = {
+    "ReplicatedStorage","ReplicatedFirst","StarterGui","StarterPack",
+    "StarterPlayer","Workspace","ServerScriptService","ServerStorage",
+    "Players","CoreGui","Chat","ChatService","Teams","Lighting","SoundService",
+}
+
+-- =================== UI ===================
+local gui = Instance.new("ScreenGui")
+gui.Name = "DumpUI"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.Parent = pg
+
+local fr = Instance.new("Frame")
+fr.Size = UDim2.new(0, 300, 0, 200)
+fr.Position = UDim2.new(0.5, -150, 0.5, -100)
+fr.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+fr.BorderSizePixel = 0
+fr.Parent = gui
+Instance.new("UICorner", fr).CornerRadius = UDim.new(0, 8)
+local stroke = Instance.new("UIStroke", fr)
+stroke.Color = Color3.fromRGB(255, 255, 255)
+stroke.Thickness = 1.5
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -16, 0, 20)
+title.Position = UDim2.new(0, 8, 0, 6)
+title.BackgroundTransparency = 1
+title.Text = "dumper"
+title.TextColor3 = Color3.fromRGB(220, 220, 240)
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Font = Enum.Font.GothamBold
+title.TextSize = 12
+title.Parent = fr
+
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, -16, 0, 16)
+status.Position = UDim2.new(0, 8, 0, 26)
+status.BackgroundTransparency = 1
+status.Text = "idle"
+status.TextColor3 = Color3.fromRGB(150, 150, 170)
+status.TextXAlignment = Enum.TextXAlignment.Left
+status.Font = Enum.Font.Code
+status.TextSize = 10
+status.Parent = fr
+
+local barBg = Instance.new("Frame")
+barBg.Size = UDim2.new(1, -16, 0, 10)
+barBg.Position = UDim2.new(0, 8, 0, 48)
+barBg.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+barBg.BorderSizePixel = 0
+barBg.Parent = fr
+Instance.new("UICorner", barBg).CornerRadius = UDim.new(0, 5)
+
+local barFill = Instance.new("Frame")
+barFill.Size = UDim2.new(0, 0, 1, 0)
+barFill.BackgroundColor3 = Color3.fromRGB(90, 190, 255)
+barFill.BorderSizePixel = 0
+barFill.Parent = barBg
+Instance.new("UICorner", barFill).CornerRadius = UDim.new(0, 5)
+
+local pct = Instance.new("TextLabel")
+pct.Size = UDim2.new(1, -16, 0, 14)
+pct.Position = UDim2.new(0, 8, 0, 62)
+pct.BackgroundTransparency = 1
+pct.Text = "0%"
+pct.TextColor3 = Color3.fromRGB(180, 200, 255)
+pct.TextXAlignment = Enum.TextXAlignment.Right
+pct.Font = Enum.Font.Code
+pct.TextSize = 10
+pct.Parent = fr
+
+local function statRow(label, y)
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(0.5, -8, 0, 16)
+    l.Position = UDim2.new(0, 8, 0, y)
+    l.BackgroundTransparency = 1
+    l.Text = label
+    l.TextColor3 = Color3.fromRGB(150, 150, 170)
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.Font = Enum.Font.Code
+    l.TextSize = 10
+    l.Parent = fr
+    local v = Instance.new("TextLabel")
+    v.Size = UDim2.new(0.5, -8, 0, 16)
+    v.Position = UDim2.new(0.5, 0, 0, y)
+    v.BackgroundTransparency = 1
+    v.Text = "0"
+    v.TextColor3 = Color3.fromRGB(220, 220, 240)
+    v.TextXAlignment = Enum.TextXAlignment.Right
+    v.Font = Enum.Font.Code
+    v.TextSize = 10
+    v.Parent = fr
+    return v
 end
 
-local function nextFolder()
+local filesVal  = statRow("files",   84)
+local adminVal  = statRow("admin",   100)
+local remoteVal = statRow("remotes", 116)
+
+local current = Instance.new("TextLabel")
+current.Size = UDim2.new(1, -16, 0, 14)
+current.Position = UDim2.new(0, 8, 0, 134)
+current.BackgroundTransparency = 1
+current.Text = ""
+current.TextColor3 = Color3.fromRGB(150, 150, 170)
+current.TextXAlignment = Enum.TextXAlignment.Left
+current.Font = Enum.Font.Code
+current.TextSize = 9
+current.TextTruncate = Enum.TextTruncate.AtEnd
+current.Parent = fr
+
+local btnRow = Instance.new("Frame")
+btnRow.Size = UDim2.new(1, -16, 0, 22)
+btnRow.Position = UDim2.new(0, 8, 1, -30)
+btnRow.BackgroundTransparency = 1
+btnRow.Parent = fr
+local bl = Instance.new("UIListLayout", btnRow)
+bl.FillDirection = Enum.FillDirection.Horizontal
+bl.Padding = UDim.new(0, 6)
+bl.SortOrder = Enum.SortOrder.LayoutOrder
+
+local function mkBtn(t, c)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0.5, -3, 1, 0)
+    b.BackgroundColor3 = c
+    b.BorderSizePixel = 0
+    b.Text = t
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 11
+    b.Parent = btnRow
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
+    return b
+end
+
+local startB = mkBtn("start", Color3.fromRGB(60, 140, 60))
+local closeB = mkBtn("close", Color3.fromRGB(80, 60, 80))
+closeB.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+-- drag
+local dragging, dragStart, startPos
+fr.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1
+        or i.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = i.Position
+        startPos = fr.Position
+    end
+end)
+fr.InputChanged:Connect(function(i)
+    if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement
+        or i.UserInputType == Enum.UserInputType.Touch) then
+        local v = i.Position - dragStart
+        fr.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + v.X,
+                                startPos.Y.Scale, startPos.Y.Offset + v.Y)
+    end
+end)
+fr.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1
+        or i.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+-- =================== DUMPER ===================
+local function nextFolderName()
     local n = 1
     if type(listfiles) == "function" then
-        local ok, f = pcall(listfiles)
-        if ok and f then
-            for _, x in ipairs(f) do
-                local num = x:match("^Ugc_(%d+)$")
-                if num then local v = tonumber(num) if v >= n then n = v + 1 end end
+        local ok, files = pcall(listfiles)
+        if ok and files then
+            for _, f in ipairs(files) do
+                local num = tostring(f):match("^Ugc_(%d+)$")
+                if num then
+                    local v = tonumber(num)
+                    if v and v >= n then n = v + 1 end
+                end
             end
         end
     end
     return "Ugc_" .. string.format("%03d", n)
 end
 
-local rem, adm, tot, hits, rc = collect()
-local folder = nextFolder()
+local running = false
 
-if type(makefolder) == "function" then pcall(makefolder, folder) end
-if type(writefile) == "function" then
-    pcall(writefile, folder .. "/remotes_manifest.txt", table.concat(rem, "\n"))
-    pcall(writefile, folder .. "/admin_findings.txt", table.concat(adm, "\n"))
-    pcall(writefile, folder .. "/_summary.txt", table.concat({
-        "Game: " .. game.Name,
-        "PlaceId: " .. game.PlaceId,
-        "JobId: " .. game.JobId,
-        "Folder: " .. folder,
-        "Scanned: " .. tot,
-        "Remotes: " .. rc,
-        "Admin: " .. hits,
-        "Time: " .. os.date("%Y-%m-%d %H:%M:%S"),
-    }, "\n"))
-end
+startB.MouseButton1Click:Connect(function()
+    if running then return end
+    running = true
+    startB.Text = "..."
+    startB.BackgroundColor3 = Color3.fromRGB(120, 100, 30)
 
-print("=== DUMP DONE ===")
-print("folder: " .. folder)
-print("scanned: " .. tot .. "  remotes: " .. rc .. "  admin: " .. hits)
-print("--- admin hits ---")
-for i = 1, math.min(#adm, 40) do print(adm[i]) end
-if #adm == 0 then print("(none)") end
-print("--- first 25 remotes ---")
-for i = 1, math.min(#rem, 25) do print(rem[i]) end
+    task.spawn(function()
+        local rem, adm = {}, {}
+        local tot, hits, rc = 0, 0, 0
+
+        -- gather services
+        local svcs = {}
+        for _, name in ipairs(svcNames) do
+            local ok, s = pcall(game.GetService, game, name)
+            if ok and s then svcs[#svcs+1] = s end
+        end
+
+        -- count for progress
+        local grandTotal = 0
+        for _, s in ipairs(svcs) do
+            local ok, d = pcall(function() return s:GetDescendants() end)
+            if ok and d then grandTotal = grandTotal + #d end
+        end
+        if grandTotal < 1 then grandTotal = 1 end
+
+        status.Text = "scanning"
+
+        -- walk
+        local counter = 0
+        for _, s in ipairs(svcs) do
+            local ok, list = pcall(function() return s:GetDescendants() end)
+            if ok and list then
+                for _, x in ipairs(list) do
+                    counter = counter + 1
+                    tot = tot + 1
+
+                    if x:IsA("RemoteEvent") or x:IsA("RemoteFunction") then
+                        rc = rc + 1
+                        rem[#rem+1] = x:GetFullName() .. "  [" .. x.ClassName .. "]"
+                    end
+
+                    local nm = x.Name:lower()
+                    for _, k in ipairs(kws) do
+                        if nm:find(k, 1, true) then
+                            hits = hits + 1
+                            adm[#adm+1] = "[" .. k .. "] " .. x:GetFullName()
+                                .. "  (" .. x.ClassName .. ")"
+                            break
+                        end
+                    end
+
+                    if counter % 200 == 0 then
+                        local p = math.min(1, counter / grandTotal)
+                        barFill.Size = UDim2.new(p, 0, 1, 0)
+                        pct.Text = math.floor(p * 100) .. "%"
+                        filesVal.Text = tostring(tot)
+                        adminVal.Text = tostring(hits)
+                        remoteVal.Text = tostring(rc)
+                        current.Text = x:GetFullName():sub(1, 60)
+                        task.wait()
+                    end
+                end
+            end
+        end
+
+        filesVal.Text = tostring(tot)
+        adminVal.Text = tostring(hits)
+        remoteVal.Text = tostring(rc)
+        barFill.Size = UDim2.new(1, 0, 1, 0)
+        pct.Text = "100%"
+        status.Text = "writing"
+
+        -- write files
+        local folder = nextFolderName()
+
+        if type(makefolder) == "function" then
+            pcall(makefolder, folder)
+        end
+
+        if type(writefile) == "function" then
+            pcall(writefile, folder .. "/remotes_manifest.txt", table.concat(rem, "\n"))
+            pcall(writefile, folder .. "/admin_findings.txt",  table.concat(adm, "\n"))
+            pcall(writefile, folder .. "/_summary.txt", table.concat({
+                "Game: "    .. game.Name,
+                "PlaceId: " .. game.PlaceId,
+                "JobId: "   .. game.JobId,
+                "Folder: "  .. folder,
+                "Scanned: " .. tot,
+                "Remotes: " .. rc,
+                "Admin: "   .. hits,
+                "Time: "    .. os.date("%Y-%m-%d %H:%M:%S"),
+            }, "\n"))
+            status.Text = "done -> " .. folder
+            status.TextColor3 = Color3.fromRGB(140, 255, 140)
+        else
+            status.Text = "no writefile"
+            status.TextColor3 = Color3.fromRGB(255, 120, 120)
+        end
+
+        running = false
+        startB.Text = "start"
+        startB.BackgroundColor3 = Color3.fromRGB(60, 140, 60)
+    end)
+end)
